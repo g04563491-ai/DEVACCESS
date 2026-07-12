@@ -117,15 +117,22 @@ html,body{
   font-family: var(--font-display);
   font-size: 11px; letter-spacing: 0.18em; color: var(--amber-dim); font-weight:600;
 }
-.field input{
+.field input, .field select{
   background: #000; border: 1px solid var(--steel-line);
   color: var(--amber); font-family: var(--font-mono); font-size: 15px;
   padding: 11px 12px; outline: none; letter-spacing: 0.05em;
   transition: border-color .15s, box-shadow .15s;
 }
-.field input:focus{
+.field input:focus, .field select:focus{
   border-color: var(--amber);
   box-shadow: 0 0 0 1px var(--amber-faint), 0 0 14px rgba(255,179,0,0.15);
+}
+.field select{
+  cursor: pointer;
+}
+.field select option{
+  background: #000;
+  color: var(--amber);
 }
 
 .btn{
@@ -205,6 +212,24 @@ html,body{
   font-size: 12.5px; letter-spacing: 0.08em; text-transform: uppercase;
 }
 .guest-banner span{ font-weight: 700; }
+
+.banner-container{
+  margin: -6px 4px 22px;
+  display:flex; flex-direction:column; gap:8px;
+}
+.banner-message{
+  padding: 12px 16px;
+  border: 1px solid var(--good);
+  background: rgba(53, 208, 127, 0.08);
+  color: var(--good);
+  font-family: var(--font-display);
+  font-size: 12px; letter-spacing: 0.06em;
+  animation: slideDown 0.3s ease;
+}
+@keyframes slideDown{
+  from{ opacity:0; transform:translateY(-10px); }
+  to{ opacity:1; transform:translateY(0); }
+}
 
 .grid{
   display:grid;
