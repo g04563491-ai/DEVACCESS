@@ -77,6 +77,8 @@
     <button id="logoutBtn" class="btn btn--ghost">TERMINATE SESSION</button>
   </div>
 
+  <div id="broadcastBanners"></div>
+
   <div class="guest-banner hidden" id="guestBanner">
     GUEST SESSION — ACCESS EXPIRES IN <span id="guestCountdown">—</span>
   </div>
@@ -123,6 +125,69 @@
       </div>
       <div class="query-output" id="guestList" style="margin-top:14px">
         <p class="muted">// active guest credentials load here.</p>
+      </div>
+    </article>
+
+    <!-- Permanent profiles + permissions -->
+    <article class="card card--wide admin-only" id="profilesCard">
+      <h2 class="card__title">MANAGE PROFILES</h2>
+      <p class="card__note" style="margin-top:0">
+        Creates a permanent operator profile with a username and password you choose, plus whichever
+        permissions you grant it. Unlike guest credentials, these never expire on their own — revoke
+        them here when access is no longer needed.
+      </p>
+      <div class="query-row">
+        <label class="field field--inline">
+          <span class="field__label">USERNAME</span>
+          <input type="text" id="profileUsername" placeholder="e.g. RVANCE" />
+        </label>
+        <label class="field field--inline">
+          <span class="field__label">PASSWORD</span>
+          <input type="text" id="profilePassword" placeholder="set a passphrase" />
+        </label>
+        <label class="field field--inline">
+          <span class="field__label">LABEL</span>
+          <input type="text" id="profileLabel" placeholder="e.g. analyst" />
+        </label>
+      </div>
+      <div class="perm-row" id="createPermRow"></div>
+      <button id="createProfileBtn" class="btn btn--small" style="margin-top:14px">CREATE PROFILE</button>
+      <div class="query-output" id="profileOutput"></div>
+      <div class="query-output" id="profileList" style="margin-top:14px">
+        <p class="muted">// permanent profiles load here.</p>
+      </div>
+    </article>
+
+    <!-- Broadcast messages -->
+    <article class="card admin-only" id="broadcastCard">
+      <h2 class="card__title">BROADCAST MESSAGE</h2>
+      <p class="card__note" style="margin-top:0">
+        Sends a banner that every logged-in session — guests and profiles alike — sees at the top of
+        their dashboard.
+      </p>
+      <div class="query-row">
+        <label class="field field--inline" style="flex:1 1 100%">
+          <span class="field__label">MESSAGE</span>
+          <input type="text" id="broadcastText" placeholder="e.g. system maintenance at 0200Z" />
+        </label>
+        <button id="sendBroadcastBtn" class="btn btn--small">BROADCAST</button>
+      </div>
+      <div class="query-output" id="broadcastList" style="margin-top:14px">
+        <p class="muted">// active broadcasts load here.</p>
+      </div>
+    </article>
+
+    <!-- Login activity + IP bans -->
+    <article class="card admin-only" id="activityCard">
+      <h2 class="card__title">LOGIN ACTIVITY &amp; BANS</h2>
+      <p class="card__note" style="margin-top:0">
+        5 failed attempts from the same IP within 24 hours triggers an automatic 24-hour ban.
+      </p>
+      <div id="banList">
+        <p class="muted">// active bans load here.</p>
+      </div>
+      <div id="attemptList" style="margin-top:14px">
+        <p class="muted">// recent login attempts load here.</p>
       </div>
     </article>
 
