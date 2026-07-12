@@ -1,4 +1,3 @@
-
 :root{
   --void: #05070a;
   --panel: #0b0f14;
@@ -14,9 +13,9 @@
   --font-display: 'Rajdhani', sans-serif;
   --font-mono: 'IBM Plex Mono', monospace;
 }
- 
+
 *{ box-sizing: border-box; }
- 
+
 html,body{
   margin:0;
   height:100%;
@@ -25,7 +24,7 @@ html,body{
   font-family: var(--font-mono);
   overflow-x:hidden;
 }
- 
+
 /* ---------- atmosphere ---------- */
 .scanlines{
   position:fixed; inset:0; pointer-events:none; z-index:50;
@@ -46,7 +45,7 @@ html,body{
   position:fixed; inset:0; pointer-events:none; z-index:48;
   background: radial-gradient(ellipse at center, transparent 45%, rgba(0,0,0,0.65) 100%);
 }
- 
+
 /* ---------- status bar ---------- */
 .statusbar{
   position:relative; z-index:2;
@@ -68,7 +67,7 @@ html,body{
   display:inline-block;
 }
 .dot.live{ background: var(--good); box-shadow: 0 0 8px var(--good); }
- 
+
 /* ---------- layout stage ---------- */
 .stage{
   min-height: calc(100vh - 41px);
@@ -77,7 +76,7 @@ html,body{
   position:relative; z-index:2;
 }
 .hidden{ display:none !important; }
- 
+
 /* ---------- login console ---------- */
 .console{
   position:relative;
@@ -96,7 +95,7 @@ html,body{
 .console__corner.tr{ top:-1px; right:-1px; border-top-width:2px; border-right-width:2px; }
 .console__corner.bl{ bottom:-1px; left:-1px; border-bottom-width:2px; border-left-width:2px; }
 .console__corner.br{ bottom:-1px; right:-1px; border-bottom-width:2px; border-right-width:2px; }
- 
+
 .console__eyebrow{
   font-size: 10px; letter-spacing: 0.22em; color: var(--alert);
   font-weight:600; margin-bottom: 10px;
@@ -111,7 +110,7 @@ html,body{
   font-size: 12.5px; line-height:1.6; color: #8a93a0;
   margin: 0 0 26px;
 }
- 
+
 .form{ display:flex; flex-direction:column; gap:16px; }
 .field{ display:flex; flex-direction:column; gap:6px; }
 .field__label{
@@ -128,7 +127,7 @@ html,body{
   border-color: var(--amber);
   box-shadow: 0 0 0 1px var(--amber-faint), 0 0 14px rgba(255,179,0,0.15);
 }
- 
+
 .btn{
   margin-top: 6px;
   background: var(--amber);
@@ -152,14 +151,14 @@ html,body{
 .btn--small{
   padding: 10px 16px; font-size:12px; align-self:flex-end;
 }
- 
+
 .feedback{
   min-height: 16px;
   font-size: 11.5px; letter-spacing: 0.06em;
   color: var(--alert);
 }
 .feedback.ok{ color: var(--good); }
- 
+
 .terminal-log{
   margin-top: 14px;
   font-size: 11px;
@@ -174,14 +173,14 @@ html,body{
 .terminal-log .accent{ color: var(--amber); }
 .terminal-log .bad{ color: var(--alert); }
 .terminal-log .good{ color: var(--good); }
- 
+
 .console__footer{
   margin-top: 22px; padding-top: 14px;
   border-top: 1px solid var(--steel-line);
   display:flex; justify-content:space-between;
   font-size: 10px; letter-spacing: 0.12em; color: #465061;
 }
- 
+
 /* ---------- dashboard ---------- */
 .dashboard{ align-items:flex-start; max-width: 1180px; margin: 0 auto; width:100%; display:block; }
 .dash-header{
@@ -195,7 +194,7 @@ html,body{
   font-size: 30px; letter-spacing: 0.03em; margin: 4px 0 0;
   text-transform: uppercase; color: var(--paper);
 }
- 
+
 .guest-banner{
   margin: -6px 4px 22px;
   padding: 10px 16px;
@@ -206,40 +205,7 @@ html,body{
   font-size: 12.5px; letter-spacing: 0.08em; text-transform: uppercase;
 }
 .guest-banner span{ font-weight: 700; }
- 
-.msg-banner{
-  margin: -6px 4px 14px;
-  padding: 10px 16px;
-  border: 1px solid var(--steel);
-  border-left: 3px solid var(--amber);
-  background: var(--panel-raised);
-  color: var(--paper);
-  font-size: 12.5px; letter-spacing: 0.02em;
-  display:flex; align-items:center; justify-content:space-between; gap:12px;
-}
-.msg-banner__time{ color:#5a6472; font-size:10.5px; white-space:nowrap; }
- 
-.perm-row{
-  display:flex; flex-wrap:wrap; gap: 14px 22px;
-  margin-top: 14px; padding-top: 14px;
-  border-top: 1px dashed var(--steel-line);
-}
-.perm-check{
-  display:flex; align-items:center; gap:7px;
-  font-family: var(--font-display); font-size: 11.5px; letter-spacing: 0.08em;
-  color: #9aa4b1; text-transform: uppercase; cursor:pointer;
-}
-.perm-check input{ accent-color: var(--amber); width:14px; height:14px; cursor:pointer; }
- 
-.profile-row{
-  display:flex; align-items:center; justify-content:space-between; gap:12px;
-  padding: 10px 0; border-bottom: 1px solid var(--steel-line);
-  font-size: 12px; flex-wrap:wrap;
-}
-.profile-row:last-child{ border-bottom:none; }
-.profile-row__name{ color: var(--paper); font-weight:600; min-width:120px; }
-.profile-row__perms{ display:flex; gap:14px; flex-wrap:wrap; flex:1; }
- 
+
 .grid{
   display:grid;
   grid-template-columns: 1fr 1fr;
@@ -262,12 +228,12 @@ html,body{
 }
 .card__note strong{ color: var(--alert); }
 .card__note code{ color: var(--amber); }
- 
+
 .kv{ display:grid; grid-template-columns: 150px 1fr; row-gap: 12px; column-gap: 10px; margin:0; }
 .kv dt{ font-family: var(--font-display); font-size:11px; letter-spacing:0.1em; color:#5a6472; }
 .kv dd{ margin:0; font-size:12.5px; color: var(--paper); word-break: break-all; }
 .mono-trunc{ font-size: 11px !important; color: var(--amber-dim) !important; }
- 
+
 .pill{
   display:inline-block; font-family: var(--font-display); font-size:11px;
   letter-spacing:0.1em; padding: 3px 10px; border: 1px solid var(--steel);
@@ -275,7 +241,7 @@ html,body{
 }
 .pill.ok{ color: var(--good); border-color: var(--good); }
 .pill.bad{ color: var(--alert); border-color: var(--alert); }
- 
+
 .query-row{ display:flex; gap:14px; align-items:flex-end; flex-wrap:wrap; }
 .field--inline{ flex: 1 1 160px; }
 .field--inline input{ width:100%; }
@@ -284,20 +250,20 @@ html,body{
   font-size: 12px; overflow-x:auto;
 }
 .muted{ color:#5a6472; }
- 
+
 table.result{ border-collapse: collapse; width:100%; font-size:11.5px; }
 table.result th, table.result td{
   border: 1px solid var(--steel-line); padding: 7px 10px; text-align:left;
   white-space:nowrap;
 }
 table.result th{ color: var(--amber); font-family: var(--font-display); letter-spacing:0.05em; }
- 
+
 .syslog{
   font-size: 11px; line-height: 1.8; color:#7d8794;
   max-height: 260px; overflow-y:auto;
 }
 .syslog div span.t{ color: var(--amber-dim); margin-right: 8px; }
- 
+
 @media (max-width: 860px){
   .grid{ grid-template-columns: 1fr; }
   .statusbar__center{ display:none; }
