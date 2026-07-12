@@ -28,6 +28,9 @@ const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_1QouxYIS9jrupTIWtBeG2A_RxyPawXE
  
 const GUEST_TABLE = "guest_access";
 const GUEST_TTL_HOURS = 24;
+const LOGIN_LOG_TABLE = "login_attempts";
+const DEV_PROFILES_TABLE = "dev_profiles";
+const BANNER_MESSAGES_TABLE = "banner_messages";
  
 const SESSION_KEY = "sector9_session";
  
@@ -87,8 +90,14 @@ function escapeHtml(str) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 }
+
+function getClientIp() {
+  // In a browser environment, we can't reliably get the real IP.
+  // This is a placeholder; consider using a service like ipify if needed.
+  return "browser-client";
+}
  
-/* ---------------------------- login flow ---------------------------- */
+/* ---------------------------- login flow with logging ---------------------------- */
  
 let attempts = 0;
  
@@ -101,6 +110,22 @@ function logLine(container, text, cls = "") {
 }
  
 function wait(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+async function logLoginAttempt(username, status) {
+  const sb = getSupabase();
+  if (!sb) return;
+  
+  try {
+    await sb.from(LOGIN_LOG_TABLE).insert({
+      username,
+      status,
+      ip_address: getClientIp(),
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error("Failed to log login attempt:", err);
+  }
+}
  
 async function handleLogin(e) {
   e.preventDefault();
@@ -132,6 +157,7 @@ async function handleLogin(e) {
   await wait(280);
  
   if (userHash === EXPECTED_USER_HASH && passHash === EXPECTED_PASS_HASH) {
+    await logLoginAttempt(userInput, "success");
     return grantAccess(log, feedback, "ADMIN", { username: userInput });
   }
  
@@ -139,9 +165,21 @@ async function handleLogin(e) {
   const guest = await checkGuestCredential(userInput, passHash);
  
   if (guest) {
+    await logLoginAttempt(userInput, "success");
     return grantAccess(log, feedback, "GUEST", {
       username: userInput,
       expiresAt: guest.expires_at,
+    });
+  }
+
+  logLine(log, "> no guest match — checking dev profiles…");
+  const devProfile = await checkDevProfile(userInput, passHash);
+  
+  if (devProfile) {
+    await logLoginAttempt(userInput, "success");
+    return grantAccess(log, feedback, "DEV", {
+      username: userInput,
+      role: devProfile.role,
     });
   }
  
@@ -151,6 +189,8 @@ async function handleLogin(e) {
   submitBtn.disabled = false;
   document.getElementById("password").value = "";
   document.getElementById("password").focus();
+  
+  await logLoginAttempt(userInput, "failure");
 }
  
 async function checkGuestCredential(username, passHash) {
@@ -170,6 +210,22 @@ async function checkGuestCredential(username, passHash) {
   if (data.password_hash !== passHash) return null;
   return data;
 }
+
+async function checkDevProfile(username, passHash) {
+  const sb = getSupabase();
+  if (!sb || !username) return null;
+  
+  const { data, error } = await sb
+    .from(DEV_PROFILES_TABLE)
+    .select("username, password_hash, role")
+    .eq("username", username)
+    .limit(1)
+    .maybeSingle();
+  
+  if (error || !data) return null;
+  if (data.password_hash !== passHash) return null;
+  return data;
+}
  
 async function grantAccess(log, feedback, role, info) {
   logLine(log, "> digest match — identity confirmed.", "good");
@@ -183,6 +239,7 @@ async function grantAccess(log, feedback, role, info) {
     role,
     username: info.username,
     expiresAt: info.expiresAt || null,
+    devRole: info.role || null,
   };
   sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
  
@@ -210,7 +267,43 @@ function enterDashboard() {
   document.getElementById("sessionId").textContent = `SESSION ${session.sid}`;
  
   applyClearance(session);
+  loadBannerMessages(session);
   initDashboard();
+}
+
+async function loadBannerMessages(session) {
+  const sb = getSupabase();
+  if (!sb) return;
+  
+  const bannerContainer = document.getElementById("bannerContainer");
+  if (!bannerContainer) return;
+  
+  const nowIso = new Date().toISOString();
+  const { data, error } = await sb
+    .from(BANNER_MESSAGES_TABLE)
+    .select("id, message_text, target_role")
+    .eq("is_active", true)
+    .or(`expires_at.is.null,expires_at.gt.${nowIso}`);
+  
+  if (error || !data || data.length === 0) {
+    bannerContainer.innerHTML = "";
+    return;
+  }
+  
+  const relevantMessages = data.filter(msg => 
+    msg.target_role === "all" || msg.target_role === session.role || 
+    (session.role === "DEV" && msg.target_role === "admin")
+  );
+  
+  if (relevantMessages.length === 0) {
+    bannerContainer.innerHTML = "";
+    return;
+  }
+  
+  bannerContainer.innerHTML = relevantMessages
+    .map(msg => `<div class="banner-message">${escapeHtml(msg.message_text)}</div>`)
+    .join("");
+  bannerContainer.classList.remove("hidden");
 }
  
 function applyClearance(session) {
@@ -218,17 +311,26 @@ function applyClearance(session) {
   const guestBanner = document.getElementById("guestBanner");
   const guestCard = document.getElementById("guestCard");
   const queryCard = document.getElementById("queryCard");
+  const devProfileCard = document.getElementById("devProfileCard");
  
   if (session.role === "ADMIN") {
     clearanceLine.textContent = `CLEARANCE GRANTED · LEVEL 5 · OPERATOR ${session.username}`;
     guestBanner.classList.add("hidden");
     guestCard.classList.remove("hidden");
     queryCard.classList.remove("hidden");
+    if (devProfileCard) devProfileCard.classList.remove("hidden");
+  } else if (session.role === "DEV") {
+    clearanceLine.textContent = `CLEARANCE GRANTED · LEVEL 3 · DEV ${session.username} [${session.devRole}]`;
+    guestBanner.classList.add("hidden");
+    guestCard.classList.add("hidden");
+    queryCard.classList.remove("hidden");
+    if (devProfileCard) devProfileCard.classList.add("hidden");
   } else {
     clearanceLine.textContent = `CLEARANCE GRANTED · LEVEL 1 · GUEST ${session.username}`;
     guestBanner.classList.remove("hidden");
     guestCard.classList.add("hidden");
     queryCard.classList.add("hidden");
+    if (devProfileCard) devProfileCard.classList.add("hidden");
     startGuestCountdown(session.expiresAt);
   }
 }
@@ -320,7 +422,11 @@ async function initDashboard() {
  
   if (session && session.role === "ADMIN") {
     document.getElementById("createGuestBtn").addEventListener("click", createGuestCredential);
+    document.getElementById("createDevBtn").addEventListener("click", createDevProfile);
+    document.getElementById("sendBannerBtn").addEventListener("click", sendBannerMessage);
     refreshGuestList();
+    refreshDevProfileList();
+    refreshBannerList();
   }
 }
  
@@ -375,9 +481,6 @@ function generateGuestUsername() {
 }
  
 function generateGuestPassword() {
-  // 16 hex chars ≈ 64 bits of entropy — the hash for this is world-readable
-  // via the anon key, so the password itself needs to resist offline
-  // guessing on its own.
   return randomHex(8);
 }
  
@@ -481,6 +584,217 @@ async function revokeGuest(id) {
   }
   sysLog(`guest credential ${id} revoked.`, "good");
   refreshGuestList();
+}
+
+/* ---------------------------- dev profiles (admin) ---------------------------- */
+
+async function createDevProfile() {
+  const sb = getSupabase();
+  const output = document.getElementById("devOutput");
+  const username = document.getElementById("devUsername").value.trim();
+  const password = document.getElementById("devPassword").value;
+  const role = document.getElementById("devRole").value || "editor";
+  
+  if (!sb) {
+    output.innerHTML = '<p class="muted" style="color:var(--alert)">// database client not initialized.</p>';
+    return;
+  }
+  
+  if (!username || !password) {
+    output.innerHTML = '<p class="muted" style="color:var(--alert)">// username and password are required.</p>';
+    return;
+  }
+  
+  const passwordHash = await sha256(password);
+  
+  output.innerHTML = '<p class="muted">// creating dev profile…</p>';
+  
+  const { error } = await sb.from(DEV_PROFILES_TABLE).insert({
+    username,
+    password_hash: passwordHash,
+    role,
+  });
+  
+  if (error) {
+    output.innerHTML = `<p class="muted" style="color:var(--alert)">// ${escapeHtml(error.message)}</p>`;
+    sysLog(`dev profile creation failed: ${error.message}`, "bad");
+    return;
+  }
+  
+  sysLog(`dev profile created: ${username} with role ${role}.`, "good");
+  document.getElementById("devUsername").value = "";
+  document.getElementById("devPassword").value = "";
+  
+  output.innerHTML = `
+    <p style="color:var(--good); margin:0 0 8px">// dev profile created successfully:</p>
+    <div class="kv" style="grid-template-columns:110px 1fr">
+      <dt>USERNAME</dt><dd>${escapeHtml(username)}</dd>
+      <dt>ROLE</dt><dd>${escapeHtml(role)}</dd>
+    </div>
+  `;
+  
+  refreshDevProfileList();
+}
+
+async function refreshDevProfileList() {
+  const sb = getSupabase();
+  const box = document.getElementById("devList");
+  if (!sb || !box) return;
+  
+  const { data, error } = await sb
+    .from(DEV_PROFILES_TABLE)
+    .select("id, username, role, created_at")
+    .order("created_at", { ascending: false });
+  
+  if (error) {
+    box.innerHTML = `<p class="muted" style="color:var(--alert)">// ${escapeHtml(error.message)}</p>`;
+    return;
+  }
+  
+  if (!data || data.length === 0) {
+    box.innerHTML = '<p class="muted">// no dev profiles created yet.</p>';
+    return;
+  }
+  
+  const rows = data
+    .map(
+      (d) => `<tr>
+        <td>${escapeHtml(d.username)}</td>
+        <td>${escapeHtml(d.role)}</td>
+        <td>${escapeHtml(new Date(d.created_at).toUTCString())}</td>
+        <td><button class="btn btn--ghost btn--small" data-delete="${d.id}">DELETE</button></td>
+      </tr>`
+    )
+    .join("");
+  
+  box.innerHTML = `
+    <table class="result">
+      <thead><tr><th>USERNAME</th><th>ROLE</th><th>CREATED</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+  
+  box.querySelectorAll("[data-delete]").forEach((btn) => {
+    btn.addEventListener("click", () => deleteDevProfile(btn.getAttribute("data-delete")));
+  });
+}
+
+async function deleteDevProfile(id) {
+  const sb = getSupabase();
+  if (!sb) return;
+  const { error } = await sb.from(DEV_PROFILES_TABLE).delete().eq("id", id);
+  if (error) {
+    sysLog(`delete dev profile failed: ${error.message}`, "bad");
+    return;
+  }
+  sysLog(`dev profile ${id} deleted.`, "good");
+  refreshDevProfileList();
+}
+
+/* ---------------------------- banner messages (admin) ---------------------------- */
+
+async function sendBannerMessage() {
+  const sb = getSupabase();
+  const output = document.getElementById("bannerOutput");
+  const messageText = document.getElementById("bannerText").value.trim();
+  const targetRole = document.getElementById("bannerTargetRole").value || "all";
+  const expiresIn = parseInt(document.getElementById("bannerExpiresIn").value, 10) || 0;
+  
+  if (!sb) {
+    output.innerHTML = '<p class="muted" style="color:var(--alert)">// database client not initialized.</p>';
+    return;
+  }
+  
+  if (!messageText) {
+    output.innerHTML = '<p class="muted" style="color:var(--alert)">// message text is required.</p>';
+    return;
+  }
+  
+  output.innerHTML = '<p class="muted">// sending banner message…</p>';
+  
+  const expiresAt = expiresIn > 0 ? new Date(Date.now() + expiresIn * 60 * 1000).toISOString() : null;
+  
+  const { error } = await sb.from(BANNER_MESSAGES_TABLE).insert({
+    message_text: messageText,
+    is_active: true,
+    target_role: targetRole,
+    expires_at: expiresAt,
+  });
+  
+  if (error) {
+    output.innerHTML = `<p class="muted" style="color:var(--alert)">// ${escapeHtml(error.message)}</p>`;
+    sysLog(`banner message send failed: ${error.message}`, "bad");
+    return;
+  }
+  
+  sysLog(`banner message sent to ${targetRole} (expires: ${expiresAt || "never"}).`, "good");
+  document.getElementById("bannerText").value = "";
+  
+  output.innerHTML = `
+    <p style="color:var(--good); margin:0 0 8px">// banner message sent successfully:</p>
+    <div class="kv" style="grid-template-columns:110px 1fr">
+      <dt>TARGET</dt><dd>${escapeHtml(targetRole)}</dd>
+      <dt>EXPIRES</dt><dd>${escapeHtml(expiresAt || "never")}</dd>
+    </div>
+  `;
+  
+  refreshBannerList();
+}
+
+async function refreshBannerList() {
+  const sb = getSupabase();
+  const box = document.getElementById("bannerList");
+  if (!sb || !box) return;
+  
+  const { data, error } = await sb
+    .from(BANNER_MESSAGES_TABLE)
+    .select("id, message_text, target_role, is_active, expires_at")
+    .eq("is_active", true)
+    .order("created_at", { ascending: false });
+  
+  if (error) {
+    box.innerHTML = `<p class="muted" style="color:var(--alert)">// ${escapeHtml(error.message)}</p>`;
+    return;
+  }
+  
+  if (!data || data.length === 0) {
+    box.innerHTML = '<p class="muted">// no active banner messages.</p>';
+    return;
+  }
+  
+  const rows = data
+    .map(
+      (b) => `<tr>
+        <td>${escapeHtml(b.message_text.substring(0, 50))}${b.message_text.length > 50 ? "…" : ""}</td>
+        <td>${escapeHtml(b.target_role)}</td>
+        <td>${escapeHtml(b.expires_at ? new Date(b.expires_at).toUTCString() : "never")}</td>
+        <td><button class="btn btn--ghost btn--small" data-deactivate="${b.id}">DEACTIVATE</button></td>
+      </tr>`
+    )
+    .join("");
+  
+  box.innerHTML = `
+    <table class="result">
+      <thead><tr><th>MESSAGE</th><th>TARGET</th><th>EXPIRES</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+  
+  box.querySelectorAll("[data-deactivate]").forEach((btn) => {
+    btn.addEventListener("click", () => deactivateBanner(btn.getAttribute("data-deactivate")));
+  });
+}
+
+async function deactivateBanner(id) {
+  const sb = getSupabase();
+  if (!sb) return;
+  const { error } = await sb.from(BANNER_MESSAGES_TABLE).update({ is_active: false }).eq("id", id);
+  if (error) {
+    sysLog(`deactivate banner failed: ${error.message}`, "bad");
+    return;
+  }
+  sysLog(`banner message ${id} deactivated.`, "good");
+  refreshBannerList();
 }
  
 /* ---------------------------- shared table renderer ---------------------------- */
