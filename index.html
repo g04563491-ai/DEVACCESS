@@ -81,6 +81,8 @@
     GUEST SESSION — ACCESS EXPIRES IN <span id="guestCountdown">—</span>
   </div>
 
+  <div id="bannerContainer" class="banner-container hidden"></div>
+
   <section class="grid">
 
     <!-- Connection card -->
@@ -142,6 +144,81 @@
       </div>
       <div class="query-output" id="queryOutput">
         <p class="muted">// enter a table name above and execute a query — results render here.</p>
+      </div>
+    </article>
+
+    <!-- Dev profiles (admin only) -->
+    <article class="card" id="devProfileCard">
+      <h2 class="card__title">MANAGE DEV PROFILES</h2>
+      <p class="card__note" style="margin-top:0">
+        Create permanent developer profiles with custom usernames and role-based permissions.
+        These profiles are stored in the <code>dev_profiles</code> table in your Supabase project.
+      </p>
+      <div class="query-row">
+        <label class="field field--inline">
+          <span class="field__label">USERNAME</span>
+          <input type="text" id="devUsername" placeholder="e.g. alice" />
+        </label>
+      </div>
+      <div class="query-row">
+        <label class="field field--inline">
+          <span class="field__label">PASSWORD</span>
+          <input type="password" id="devPassword" placeholder="enter password" />
+        </label>
+      </div>
+      <div class="query-row">
+        <label class="field field--inline">
+          <span class="field__label">ROLE</span>
+          <select id="devRole">
+            <option value="admin">admin</option>
+            <option value="editor">editor</option>
+            <option value="viewer">viewer</option>
+          </select>
+        </label>
+        <button id="createDevBtn" class="btn btn--small">CREATE PROFILE</button>
+      </div>
+      <div class="query-output" id="devOutput">
+        <p class="muted">// new dev profiles are shown here.</p>
+      </div>
+      <div class="query-output" id="devList" style="margin-top:14px">
+        <p class="muted">// active dev profiles load here.</p>
+      </div>
+    </article>
+
+    <!-- Banner messages (admin only) -->
+    <article class="card card--wide" id="bannerCard">
+      <h2 class="card__title">SEND BANNER MESSAGES</h2>
+      <p class="card__note" style="margin-top:0">
+        Send messages that appear as banners at the top of user sessions.
+        Messages are stored in the <code>banner_messages</code> table.
+      </p>
+      <div class="query-row">
+        <label class="field field--inline">
+          <span class="field__label">MESSAGE</span>
+          <input type="text" id="bannerText" placeholder="e.g. System maintenance at 2 AM UTC" />
+        </label>
+      </div>
+      <div class="query-row">
+        <label class="field field--inline">
+          <span class="field__label">TARGET</span>
+          <select id="bannerTargetRole">
+            <option value="all">all</option>
+            <option value="admin">admin</option>
+            <option value="dev">dev</option>
+            <option value="guest">guest</option>
+          </select>
+        </label>
+        <label class="field field--inline">
+          <span class="field__label">EXPIRES IN (MIN)</span>
+          <input type="number" id="bannerExpiresIn" value="0" min="0" placeholder="0 = never" />
+        </label>
+        <button id="sendBannerBtn" class="btn btn--small">SEND</button>
+      </div>
+      <div class="query-output" id="bannerOutput">
+        <p class="muted">// sent messages are shown here.</p>
+      </div>
+      <div class="query-output" id="bannerList" style="margin-top:14px">
+        <p class="muted">// active banner messages load here.</p>
       </div>
     </article>
 
