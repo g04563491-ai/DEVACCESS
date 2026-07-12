@@ -94,7 +94,7 @@ function escapeHtml(str) {
 function getClientIp() {
   // In a browser environment, we can't reliably get the real IP.
   // This is a placeholder; consider using a service like ipify if needed.
-  return "browser-client";
+  return null; // In a browser environment, we can't reliably get the real IP. Sending null for inet type.
 }
  
 /* ---------------------------- login flow with logging ---------------------------- */
