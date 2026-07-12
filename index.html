@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SECTOR-9 :: ACCESS TERMINAL</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="scanlines" aria-hidden="true"></div>
+<div class="noise" aria-hidden="true"></div>
+<div class="vignette" aria-hidden="true"></div>
+
+<!-- ============ TOP STATUS BAR ============ -->
+<header class="statusbar">
+  <div class="statusbar__left">
+    <span class="dot" id="linkDot"></span>
+    <span id="linkText">UPLINK STANDBY</span>
+  </div>
+  <div class="statusbar__center">SECTOR-9 REMOTE ACCESS TERMINAL</div>
+  <div class="statusbar__right">
+    <span id="clock">00:00:00Z</span>
+  </div>
+</header>
+
+<!-- ============ LOGIN SCREEN ============ -->
+<main id="loginScreen" class="stage">
+  <div class="console">
+    <div class="console__corner tl"></div>
+    <div class="console__corner tr"></div>
+    <div class="console__corner bl"></div>
+    <div class="console__corner br"></div>
+
+    <div class="console__eyebrow">CLASSIFICATION // TOP SECRET · SCI</div>
+    <h1 class="console__title">IDENTITY VERIFICATION REQUIRED</h1>
+    <p class="console__sub">This terminal is monitored. Unauthorized access attempts are logged and traced. Present valid credentials to continue.</p>
+
+    <form id="loginForm" class="form" autocomplete="off">
+      <label class="field">
+        <span class="field__label">OPERATOR ID</span>
+        <input type="text" id="username" name="username" spellcheck="false" autocomplete="off" />
+      </label>
+      <label class="field">
+        <span class="field__label">PASSPHRASE</span>
+        <input type="password" id="password" name="password" autocomplete="off" />
+      </label>
+
+      <button type="submit" class="btn" id="submitBtn">
+        <span>AUTHENTICATE</span>
+      </button>
+
+      <div class="feedback" id="feedback" aria-live="polite"></div>
+    </form>
+
+    <div class="terminal-log" id="terminalLog" aria-hidden="true"></div>
+
+    <div class="console__footer">
+      <span>NODE 09-ALPHA</span>
+      <span id="attemptCounter">ATTEMPTS: 0</span>
+      <span id="sessionId">SESSION —</span>
+    </div>
+  </div>
+</main>
+
+<!-- ============ DEV ACCESS PANEL (post-auth) ============ -->
+<main id="dashboard" class="stage dashboard hidden">
+
+  <div class="dash-header">
+    <div>
+      <div class="console__eyebrow" id="clearanceLine">CLEARANCE GRANTED · LEVEL 5</div>
+      <h1 class="dash-title">DEV ACCESS PANEL</h1>
+    </div>
+    <button id="logoutBtn" class="btn btn--ghost">TERMINATE SESSION</button>
+  </div>
+
+  <div class="guest-banner hidden" id="guestBanner">
+    GUEST SESSION — ACCESS EXPIRES IN <span id="guestCountdown">—</span>
+  </div>
+
+  <section class="grid">
+
+    <!-- Connection card -->
+    <article class="card">
+      <h2 class="card__title">DATABASE UPLINK</h2>
+      <dl class="kv">
+        <dt>PROJECT URL</dt>
+        <dd id="projUrl">—</dd>
+        <dt>PUBLISHABLE KEY</dt>
+        <dd class="mono-trunc" id="projKey">—</dd>
+        <dt>STATUS</dt>
+        <dd><span class="pill" id="dbStatus">CHECKING…</span></dd>
+      </dl>
+      <p class="card__note">
+        Direct <code>postgresql://</code> connection strings contain your database password and must
+        <strong>never</strong> be embedded in client-side code hosted on GitHub Pages — anyone who
+        views the page source can read it. Use them only from a private server, CLI, or migration tool.
+        This panel talks to Supabase exclusively through the public <em>publishable key</em>, which is
+        designed to be exposed client-side and is governed by your Row Level Security policies.
+      </p>
+    </article>
+
+    <!-- Guest credentials -->
+    <article class="card" id="guestCard">
+      <h2 class="card__title">ISSUE GUEST CREDENTIALS <span class="pill">24H EXPIRY</span></h2>
+      <p class="card__note" style="margin-top:0">
+        Generates a one-time operator ID + passphrase that can log in to this terminal for 24 hours,
+        then stops working automatically. Stored as a table in your Supabase project — run
+        <code>guest_access.sql</code> once in the SQL editor before using this.
+      </p>
+      <div class="query-row">
+        <label class="field field--inline">
+          <span class="field__label">LABEL (OPTIONAL)</span>
+          <input type="text" id="guestLabel" placeholder="e.g. contractor review" />
+        </label>
+        <button id="createGuestBtn" class="btn btn--small">GENERATE 24H ACCESS</button>
+      </div>
+      <div class="query-output" id="guestOutput">
+        <p class="muted">// generated credentials are shown once here — copy them immediately.</p>
+      </div>
+      <div class="query-output" id="guestList" style="margin-top:14px">
+        <p class="muted">// active guest credentials load here.</p>
+      </div>
+    </article>
+
+    <!-- Query console -->
+    <article class="card card--wide" id="queryCard">
+      <h2 class="card__title">QUERY CONSOLE</h2>
+      <div class="query-row">
+        <label class="field field--inline">
+          <span class="field__label">TABLE</span>
+          <input type="text" id="tableName" placeholder="e.g. agents" />
+        </label>
+        <label class="field field--inline">
+          <span class="field__label">LIMIT</span>
+          <input type="number" id="rowLimit" value="25" min="1" max="500" />
+        </label>
+        <button id="runQuery" class="btn btn--small">RUN SELECT *</button>
+      </div>
+      <div class="query-output" id="queryOutput">
+        <p class="muted">// enter a table name above and execute a query — results render here.</p>
+      </div>
+    </article>
+
+    <!-- System log -->
+    <article class="card">
+      <h2 class="card__title">SYSTEM LOG</h2>
+      <div class="syslog" id="sysLog"></div>
+    </article>
+
+  </section>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
+<script src="app.js" defer></script>
+</body>
+</html>
