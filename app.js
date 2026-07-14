@@ -33,6 +33,16 @@ const DEV_PROFILES_TABLE = "dev_profiles";
 const BANNER_MESSAGES_TABLE = "banner_messages";
  
 const SESSION_KEY = "sector9_session";
+
+/* ---------------------------- forum (separate Supabase project) ----------------------------
+   The forum lives in its own Supabase project (kept separate from the auth/admin project
+   above on purpose). It only becomes reachable once a session exists in sessionStorage,
+   and every post is written under session.username — there is no independent forum login. */
+const FORUM_SUPABASE_URL = "https://jvrmohmrutoprovqtozv.supabase.co";
+const FORUM_SUPABASE_KEY = "sb_publishable_tbIHdpgjxmQ1C9e2ZAjeEA__1-esu8G";
+const FORUM_CHANNELS_TABLE = "forum_channels";
+const FORUM_POSTS_TABLE = "forum_posts";
+const FORUM_ADMIN_USERNAME = "JEGM";
  
 /* ---------------------------- utilities ---------------------------- */
  
@@ -81,6 +91,17 @@ function getSupabase() {
   if (typeof window.supabase === "undefined") return null;
   window.__sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
   return window.__sb;
+}
+
+function getForumSupabase() {
+  if (window.__fsb) return window.__fsb;
+  if (typeof window.supabase === "undefined") return null;
+  window.__fsb = window.supabase.createClient(FORUM_SUPABASE_URL, FORUM_SUPABASE_KEY);
+  return window.__fsb;
+}
+
+function isForumAdmin(session) {
+  return !!session && session.role === "ADMIN";
 }
  
 function escapeHtml(str) {
@@ -269,6 +290,7 @@ function enterDashboard() {
   applyClearance(session);
   loadBannerMessages(session);
   initDashboard();
+  initForum(session);
 }
 
 async function loadBannerMessages(session) {
@@ -363,6 +385,8 @@ function startGuestCountdown(expiresAtIso) {
 function logout() {
   sessionStorage.removeItem(SESSION_KEY);
   if (countdownInterval) clearInterval(countdownInterval);
+  forumState.activeChannelId = null;
+  forumState.session = null;
   setLink("standby");
   document.getElementById("dashboard").classList.add("hidden");
   document.getElementById("loginScreen").classList.remove("hidden");
@@ -797,6 +821,178 @@ async function deactivateBanner(id) {
   refreshBannerList();
 }
  
+/* ---------------------------- forum ---------------------------- */
+
+const forumState = {
+  channels: [],
+  activeChannelId: null,
+  initialized: false,
+  session: null,
+};
+
+function initForum(session) {
+  forumState.session = session;
+
+  const userPill = document.getElementById("forumUserPill");
+  if (userPill) userPill.textContent = `POSTING AS ${session.username}`;
+
+  const addRow = document.getElementById("forumAddChannelRow");
+  if (addRow) addRow.style.display = isForumAdmin(session) ? "flex" : "none";
+
+  if (!forumState.initialized) {
+    forumState.initialized = true;
+    document.getElementById("forumCreateChannelBtn")?.addEventListener("click", () => createForumChannel(forumState.session));
+    document.getElementById("forumPostBtn")?.addEventListener("click", () => submitForumPost(forumState.session));
+  }
+
+  loadForumChannels(session);
+}
+
+async function loadForumChannels(session) {
+  const sb = getForumSupabase();
+  const list = document.getElementById("forumChannelList");
+  if (!list) return;
+
+  if (!sb) {
+    list.innerHTML = '<p class="muted" style="color:var(--alert)">// forum database client not initialized.</p>';
+    return;
+  }
+
+  const { data, error } = await sb
+    .from(FORUM_CHANNELS_TABLE)
+    .select("id, name, description")
+    .order("name", { ascending: true });
+
+  if (error) {
+    list.innerHTML = `<p class="muted" style="color:var(--alert)">// ${escapeHtml(error.message)}</p>`;
+    return;
+  }
+
+  forumState.channels = data || [];
+
+  if (forumState.channels.length === 0) {
+    list.innerHTML = '<p class="muted">// no channels yet.</p>';
+    document.getElementById("forumPosts").innerHTML = '<p class="muted">// no channel selected.</p>';
+    return;
+  }
+
+  if (!forumState.activeChannelId || !forumState.channels.some((c) => c.id === forumState.activeChannelId)) {
+    forumState.activeChannelId = forumState.channels[0].id;
+  }
+
+  list.innerHTML = forumState.channels
+    .map(
+      (c) => `<button type="button" class="forum-channel-btn${c.id === forumState.activeChannelId ? " active" : ""}" data-channel="${c.id}">
+        #${escapeHtml(c.name)}
+      </button>`
+    )
+    .join("");
+
+  list.querySelectorAll("[data-channel]").forEach((btn) => {
+    btn.addEventListener("click", () => selectForumChannel(session, Number(btn.getAttribute("data-channel"))));
+  });
+
+  loadForumPosts(forumState.activeChannelId);
+}
+
+function selectForumChannel(session, channelId) {
+  forumState.activeChannelId = channelId;
+  document.querySelectorAll(".forum-channel-btn").forEach((btn) => {
+    btn.classList.toggle("active", Number(btn.getAttribute("data-channel")) === channelId);
+  });
+  loadForumPosts(channelId);
+}
+
+async function loadForumPosts(channelId) {
+  const sb = getForumSupabase();
+  const box = document.getElementById("forumPosts");
+  if (!sb || !box || !channelId) return;
+
+  box.innerHTML = '<p class="muted">// loading posts…</p>';
+
+  const { data, error } = await sb
+    .from(FORUM_POSTS_TABLE)
+    .select("id, username, content, created_at")
+    .eq("channel_id", channelId)
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    box.innerHTML = `<p class="muted" style="color:var(--alert)">// ${escapeHtml(error.message)}</p>`;
+    return;
+  }
+
+  if (!data || data.length === 0) {
+    box.innerHTML = '<p class="muted">// no posts in this channel yet — be the first.</p>';
+    return;
+  }
+
+  box.innerHTML = data
+    .map(
+      (p) => `<div class="forum-post">
+        <div class="forum-post__meta"><span class="forum-post__user">${escapeHtml(p.username)}</span><span class="forum-post__time">${escapeHtml(new Date(p.created_at).toUTCString())}</span></div>
+        <div class="forum-post__body">${escapeHtml(p.content)}</div>
+      </div>`
+    )
+    .join("");
+
+  box.scrollTop = box.scrollHeight;
+}
+
+async function submitForumPost(session) {
+  const sb = getForumSupabase();
+  const textarea = document.getElementById("forumPostText");
+  const content = textarea?.value.trim();
+
+  if (!sb) return;
+  if (!forumState.activeChannelId) {
+    sysLog("forum post failed: no channel selected.", "bad");
+    return;
+  }
+  if (!content) return;
+
+  const { error } = await sb.from(FORUM_POSTS_TABLE).insert({
+    channel_id: forumState.activeChannelId,
+    username: session.username,
+    content,
+  });
+
+  if (error) {
+    sysLog(`forum post failed: ${error.message}`, "bad");
+    return;
+  }
+
+  textarea.value = "";
+  loadForumPosts(forumState.activeChannelId);
+}
+
+async function createForumChannel(session) {
+  if (!isForumAdmin(session)) return;
+
+  const sb = getForumSupabase();
+  const nameInput = document.getElementById("forumChannelName");
+  const descInput = document.getElementById("forumChannelDesc");
+  const name = nameInput?.value.trim().toLowerCase().replace(/\s+/g, "-");
+  const description = descInput?.value.trim() || null;
+
+  if (!sb || !name) return;
+
+  const { error } = await sb.from(FORUM_CHANNELS_TABLE).insert({
+    name,
+    description,
+    created_by: session.username,
+  });
+
+  if (error) {
+    sysLog(`channel creation failed: ${error.message}`, "bad");
+    return;
+  }
+
+  sysLog(`forum channel #${name} created.`, "good");
+  nameInput.value = "";
+  descInput.value = "";
+  loadForumChannels(session);
+}
+
 /* ---------------------------- shared table renderer ---------------------------- */
  
 function renderTable(rows) {
