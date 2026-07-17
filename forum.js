@@ -33,27 +33,51 @@ function showGate() {
   document.getElementById("forumApp").classList.add("hidden");
 }
 
-function showForum(session) {
-  document.getElementById("forumGate").classList.add("hidden");
-  document.getElementById("forumApp").classList.remove("hidden");
-
-  document.getElementById("sessionId").textContent = `SESSION ${session.sid}`;
-
-  const roleLabel =
-    session.role === "ADMIN" ? "LEVEL 5 · OPERATOR" :
-    session.role === "DEV" ? `LEVEL 3 · DEV [${session.devRole}]` :
-    "LEVEL 1 · GUEST";
-  document.getElementById("forumClearanceLine").textContent = `CLEARANCE GRANTED · ${roleLabel} ${session.username}`;
-
-  const guestBanner = document.getElementById("forumGuestBanner");
-  if (session.role === "GUEST") {
-    guestBanner.classList.remove("hidden");
-    startForumGuestCountdown(session.expiresAt);
+function reportFatalError(err) {
+  const message = err && err.message ? err.message : String(err);
+  console.error("forum fatal error:", err);
+  const box = document.getElementById("forumSysLog");
+  if (box) {
+    forumSysLog(`fatal error: ${message}`, "bad");
   } else {
-    guestBanner.classList.add("hidden");
+    // Boot failed before the app view even rendered — fall back to an alert
+    // so this is never silent, since there's nowhere on-page to log it.
+    document.title = "SECTOR-9 :: FORUM (ERROR)";
   }
+}
 
-  initForum(session);
+function showForum(session) {
+  try {
+    document.getElementById("forumGate").classList.add("hidden");
+    document.getElementById("forumApp").classList.remove("hidden");
+
+    document.getElementById("sessionId").textContent = `SESSION ${session.sid}`;
+
+    const roleLabel =
+      session.role === "ADMIN" ? "LEVEL 5 · OPERATOR" :
+      session.role === "DEV" ? `LEVEL 3 · DEV [${session.devRole}]` :
+      "LEVEL 1 · GUEST";
+    document.getElementById("forumClearanceLine").textContent = `CLEARANCE GRANTED · ${roleLabel} ${session.username}`;
+
+    const guestBanner = document.getElementById("forumGuestBanner");
+    if (session.role === "GUEST") {
+      guestBanner.classList.remove("hidden");
+      startForumGuestCountdown(session.expiresAt);
+    } else {
+      guestBanner.classList.add("hidden");
+    }
+
+    if (typeof window.supabase === "undefined") {
+      forumSysLog("supabase-js failed to load from CDN — check network/ad-blockers.", "bad");
+      document.getElementById("forumChannelList").innerHTML =
+        '<p class="muted" style="color:var(--alert)">// forum database client not initialized.</p>';
+      return;
+    }
+
+    initForum(session);
+  } catch (err) {
+    reportFatalError(err);
+  }
 }
 
 let forumCountdownInterval = null;
@@ -123,10 +147,17 @@ async function loadForumChannels(session) {
     return;
   }
 
-  const { data, error } = await sb
-    .from(FORUM_CHANNELS_TABLE)
-    .select("id, name, description")
-    .order("name", { ascending: true });
+  let data, error;
+  try {
+    ({ data, error } = await sb
+      .from(FORUM_CHANNELS_TABLE)
+      .select("id, name, description")
+      .order("name", { ascending: true }));
+  } catch (err) {
+    list.innerHTML = `<p class="muted" style="color:var(--alert)">// request failed: ${escapeHtml(err.message || String(err))}</p>`;
+    forumSysLog(`channel load threw: ${err.message || err}`, "bad");
+    return;
+  }
 
   if (error) {
     list.innerHTML = `<p class="muted" style="color:var(--alert)">// ${escapeHtml(error.message)}</p>`;
@@ -185,11 +216,18 @@ async function loadForumPosts(channelId) {
 
   box.innerHTML = '<p class="muted">// loading posts…</p>';
 
-  const { data, error } = await sb
-    .from(FORUM_POSTS_TABLE)
-    .select("id, username, content, created_at")
-    .eq("channel_id", channelId)
-    .order("created_at", { ascending: true });
+  let data, error;
+  try {
+    ({ data, error } = await sb
+      .from(FORUM_POSTS_TABLE)
+      .select("id, username, content, created_at")
+      .eq("channel_id", channelId)
+      .order("created_at", { ascending: true }));
+  } catch (err) {
+    box.innerHTML = `<p class="muted" style="color:var(--alert)">// request failed: ${escapeHtml(err.message || String(err))}</p>`;
+    forumSysLog(`post load threw: ${err.message || err}`, "bad");
+    return;
+  }
 
   if (error) {
     box.innerHTML = `<p class="muted" style="color:var(--alert)">// ${escapeHtml(error.message)}</p>`;
@@ -272,17 +310,21 @@ async function createForumChannel(session) {
 /* ---------------------------- boot ---------------------------- */
 
 document.addEventListener("DOMContentLoaded", () => {
-  bootClock();
+  try {
+    bootClock();
 
-  document.getElementById("forumLogoutBtn")?.addEventListener("click", handleLogout);
+    document.getElementById("forumLogoutBtn")?.addEventListener("click", handleLogout);
 
-  const session = getValidSession();
-  if (!session) {
-    setLink("standby");
-    showGate();
-    return;
+    const session = getValidSession();
+    if (!session) {
+      setLink("standby");
+      showGate();
+      return;
+    }
+
+    setLink("live");
+    showForum(session);
+  } catch (err) {
+    reportFatalError(err);
   }
-
-  setLink("live");
-  showForum(session);
 });
