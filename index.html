@@ -74,7 +74,10 @@
       <div class="console__eyebrow" id="clearanceLine">CLEARANCE GRANTED · LEVEL 5</div>
       <h1 class="dash-title">DEV ACCESS PANEL</h1>
     </div>
-    <button id="logoutBtn" class="btn btn--ghost">TERMINATE SESSION</button>
+    <div class="dash-header__actions">
+      <a href="forum.html" class="btn btn--ghost">OPEN FORUM →</a>
+      <button id="logoutBtn" class="btn btn--ghost">TERMINATE SESSION</button>
+    </div>
   </div>
 
   <div class="guest-banner hidden" id="guestBanner">
@@ -222,41 +225,6 @@
       </div>
     </article>
 
-    <!-- Forum (all logged-in roles) -->
-    <article class="card card--wide" id="forumCard">
-      <h2 class="card__title">FORUM <span class="pill" id="forumUserPill">—</span></h2>
-      <p class="card__note" style="margin-top:0">
-        Posts under your login username automatically — there's no separate forum account.
-        Stored in a dedicated Supabase project via the <code>forum_channels</code> and <code>forum_posts</code> tables.
-        Only <strong style="color:var(--amber)">@JEGM</strong> (admin) can add new topic channels.
-      </p>
-      <div class="query-row" id="forumAddChannelRow" style="display:none">
-        <label class="field field--inline">
-          <span class="field__label">NEW CHANNEL NAME</span>
-          <input type="text" id="forumChannelName" placeholder="e.g. off-topic" />
-        </label>
-        <label class="field field--inline">
-          <span class="field__label">DESCRIPTION</span>
-          <input type="text" id="forumChannelDesc" placeholder="optional" />
-        </label>
-        <button id="forumCreateChannelBtn" class="btn btn--small">ADD CHANNEL</button>
-      </div>
-      <div class="forum-layout">
-        <div class="forum-channels" id="forumChannelList">
-          <p class="muted">// loading channels…</p>
-        </div>
-        <div class="forum-main">
-          <div class="forum-posts" id="forumPosts">
-            <p class="muted">// select a channel.</p>
-          </div>
-          <div class="forum-composer">
-            <textarea id="forumPostText" placeholder="write a post…" rows="3"></textarea>
-            <button id="forumPostBtn" class="btn btn--small">POST</button>
-          </div>
-        </div>
-      </div>
-    </article>
-
     <!-- System log -->
     <article class="card">
       <h2 class="card__title">SYSTEM LOG</h2>
@@ -267,6 +235,7 @@
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
+<script src="shared.js" defer></script>
 <script src="app.js" defer></script>
 </body>
 </html>
