@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SECTOR-9 :: FORUM</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="scanlines" aria-hidden="true"></div>
+<div class="noise" aria-hidden="true"></div>
+<div class="vignette" aria-hidden="true"></div>
+
+<!-- ============ TOP STATUS BAR ============ -->
+<header class="statusbar">
+  <div class="statusbar__left">
+    <span class="dot" id="linkDot"></span>
+    <span id="linkText">UPLINK STANDBY</span>
+  </div>
+  <div class="statusbar__center">SECTOR-9 COMMS CHANNEL</div>
+  <div class="statusbar__right">
+    <span id="clock">00:00:00Z</span>
+  </div>
+</header>
+
+<!-- ============ ACCESS GATE (no valid session) ============ -->
+<main id="forumGate" class="stage hidden">
+  <div class="console">
+    <div class="console__corner tl"></div>
+    <div class="console__corner tr"></div>
+    <div class="console__corner bl"></div>
+    <div class="console__corner br"></div>
+
+    <div class="console__eyebrow">CLASSIFICATION // TOP SECRET · SCI</div>
+    <h1 class="console__title">NO ACTIVE SESSION</h1>
+    <p class="console__sub">
+      The forum posts under your terminal login — there's no separate forum account.
+      Authenticate at the access terminal first, then return here.
+    </p>
+    <a href="index.html" class="btn">RETURN TO ACCESS TERMINAL</a>
+  </div>
+</main>
+
+<!-- ============ FORUM (post-auth) ============ -->
+<main id="forumApp" class="stage dashboard hidden">
+
+  <div class="dash-header">
+    <div>
+      <div class="console__eyebrow" id="forumClearanceLine">CLEARANCE GRANTED</div>
+      <h1 class="dash-title">FORUM</h1>
+    </div>
+    <div class="dash-header__actions">
+      <a href="index.html" class="btn btn--ghost">← DEV ACCESS PANEL</a>
+      <button id="forumLogoutBtn" class="btn btn--ghost">TERMINATE SESSION</button>
+    </div>
+  </div>
+
+  <div class="guest-banner hidden" id="forumGuestBanner">
+    GUEST SESSION — ACCESS EXPIRES IN <span id="forumGuestCountdown">—</span>
+  </div>
+
+  <section class="grid">
+
+    <!-- Forum -->
+    <article class="card card--wide" id="forumCard">
+      <h2 class="card__title">#<span id="forumActiveChannel">—</span> <span class="pill" id="forumUserPill">—</span></h2>
+      <p class="card__note" style="margin-top:0">
+        Posts under your login username automatically — there's no separate forum account.
+        Stored in a dedicated Supabase project via the <code>forum_channels</code> and <code>forum_posts</code> tables.
+        Only <strong style="color:var(--amber)">@JEGM</strong> (admin) can add new topic channels.
+      </p>
+      <div class="query-row" id="forumAddChannelRow" style="display:none">
+        <label class="field field--inline">
+          <span class="field__label">NEW CHANNEL NAME</span>
+          <input type="text" id="forumChannelName" placeholder="e.g. off-topic" />
+        </label>
+        <label class="field field--inline">
+          <span class="field__label">DESCRIPTION</span>
+          <input type="text" id="forumChannelDesc" placeholder="optional" />
+        </label>
+        <button id="forumCreateChannelBtn" class="btn btn--small">ADD CHANNEL</button>
+      </div>
+      <div class="forum-layout forum-layout--full">
+        <div class="forum-channels" id="forumChannelList">
+          <p class="muted">// loading channels…</p>
+        </div>
+        <div class="forum-main">
+          <div class="forum-posts forum-posts--full" id="forumPosts">
+            <p class="muted">// select a channel.</p>
+          </div>
+          <div class="forum-composer">
+            <textarea id="forumPostText" placeholder="write a post… (⌘/ctrl + enter to send)" rows="3"></textarea>
+            <button id="forumPostBtn" class="btn btn--small">POST</button>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <!-- Channel log -->
+    <article class="card">
+      <h2 class="card__title">CHANNEL LOG</h2>
+      <div class="syslog" id="forumSysLog"></div>
+    </article>
+
+  </section>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
+<script src="shared.js" defer></script>
+<script src="forum.js" defer></script>
+</body>
+</html>
