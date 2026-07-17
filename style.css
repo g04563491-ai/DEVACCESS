@@ -195,7 +195,10 @@ html,body{
   padding: 30px 4px 22px;
   border-bottom: 1px solid var(--steel-line);
   margin-bottom: 26px;
+  gap: 16px; flex-wrap: wrap;
 }
+.dash-header__actions{ display:flex; gap:10px; flex-wrap:wrap; }
+.dash-header__actions .btn{ text-decoration:none; display:inline-flex; align-items:center; }
 .dash-title{
   font-family: var(--font-display);
   font-size: 30px; letter-spacing: 0.03em; margin: 4px 0 0;
@@ -336,6 +339,13 @@ table.result th{ color: var(--amber); font-family: var(--font-display); letter-s
 @media (max-width: 860px){
   .forum-layout{ grid-template-columns: 1fr; }
   .forum-channels{ flex-direction:row; flex-wrap:wrap; }
+}
+
+/* Standalone forum page gets more room to breathe than the dashboard card did */
+.forum-layout--full{ grid-template-columns: 200px 1fr; }
+.forum-posts--full{ max-height: 520px; }
+@media (max-width: 860px){
+  .forum-layout--full{ grid-template-columns: 1fr; }
 }
 
 @media (max-width: 860px){
