@@ -1,127 +1,35 @@
 /* =========================================================================
    SECTOR-9 ACCESS TERMINAL
    -------------------------------------------------------------------------
+   Handles the login screen and the post-auth DEV ACCESS PANEL (connection
+   status, guest credential issuing, dev profile management, banners, and
+   the raw query console). Forum functionality lives entirely in forum.html
+   / forum.js now — this file no longer touches it.
+
    Credentials are never stored in plaintext. Only a SHA-256 digest of the
    admin operator ID and passphrase live in this file. On submit, the
    browser hashes whatever was typed (Web Crypto API) and compares digests.
    Guest credentials work the same way, but their digests live in a
    Supabase table (guest_access) instead of hardcoded here, so they can be
    issued and revoked without editing code.
- 
-   IMPORTANT — read this even though the UI says "TOP SECRET":
-   This is a STATIC site (GitHub Pages). There is no server to keep a
-   secret from a determined visitor. Anyone can open dev tools and read
-   the admin digest below, and — because there's no real backend — anyone
-   holding the Supabase publishable key (which is public the moment this
-   site is live) can call the same Supabase table directly and read guest
-   password hashes or insert their own guest row, bypassing this screen
-   entirely, UNLESS you lock the guest_access table down with real RLS
-   policies (see guest_access.sql). Treat the login screen as theming and
-   a speed bump, not a security boundary.
+
+   Shared helpers (Supabase clients, session storage, sha256, clock, etc.)
+   live in shared.js, loaded before this file.
    ========================================================================= */
- 
+
 const EXPECTED_USER_HASH = "5fa4174c6f614af6121eb0d90ef3f78c3f3758c122b97dac823cb232e8e8b203";
 const EXPECTED_PASS_HASH = "c73c7ba95a20de28d8b972c40ef32a8a03f5cd9a859ae8c8da56e9ee9da23aac";
- 
-const SUPABASE_URL = "https://vnhgnrxixwudicwqqqzu.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_1QouxYIS9jrupTIWtBeG2A_RxyPawXE";
- 
-const GUEST_TABLE = "guest_access";
-const GUEST_TTL_HOURS = 24;
-const LOGIN_LOG_TABLE = "login_attempts";
-const DEV_PROFILES_TABLE = "dev_profiles";
-const BANNER_MESSAGES_TABLE = "banner_messages";
- 
-const SESSION_KEY = "sector9_session";
-
-/* ---------------------------- forum (separate Supabase project) ----------------------------
-   The forum lives in its own Supabase project (kept separate from the auth/admin project
-   above on purpose). It only becomes reachable once a session exists in sessionStorage,
-   and every post is written under session.username — there is no independent forum login. */
-const FORUM_SUPABASE_URL = "https://jvrmohmrutoprovqtozv.supabase.co";
-const FORUM_SUPABASE_KEY = "sb_publishable_tbIHdpgjxmQ1C9e2ZAjeEA__1-esu8G";
-const FORUM_CHANNELS_TABLE = "forum_channels";
-const FORUM_POSTS_TABLE = "forum_posts";
-const FORUM_ADMIN_USERNAME = "JEGM";
- 
-/* ---------------------------- utilities ---------------------------- */
- 
-async function sha256(text) {
-  const enc = new TextEncoder().encode(text);
-  const digest = await crypto.subtle.digest("SHA-256", enc);
-  return Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
- 
-function pad(n) { return n.toString().padStart(2, "0"); }
- 
-function tickClock() {
-  const el = document.getElementById("clock");
-  if (!el) return;
-  const d = new Date();
-  el.textContent = `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}Z`;
-}
- 
-function setLink(status) {
-  const dot = document.getElementById("linkDot");
-  const text = document.getElementById("linkText");
-  if (!dot || !text) return;
-  if (status === "live") {
-    dot.classList.add("live");
-    text.textContent = "UPLINK SECURE";
-  } else {
-    dot.classList.remove("live");
-    text.textContent = "UPLINK STANDBY";
-  }
-}
- 
-function randomHex(byteLen) {
-  return Array.from(crypto.getRandomValues(new Uint8Array(byteLen)))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
- 
-function randomSessionId() {
-  return randomHex(4).toUpperCase();
-}
- 
-function getSupabase() {
-  if (window.__sb) return window.__sb;
-  if (typeof window.supabase === "undefined") return null;
-  window.__sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
-  return window.__sb;
-}
-
-function getForumSupabase() {
-  if (window.__fsb) return window.__fsb;
-  if (typeof window.supabase === "undefined") return null;
-  window.__fsb = window.supabase.createClient(FORUM_SUPABASE_URL, FORUM_SUPABASE_KEY);
-  return window.__fsb;
-}
-
-function isForumAdmin(session) {
-  return !!session && session.role === "ADMIN";
-}
- 
-function escapeHtml(str) {
-  return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
 
 function getClientIp() {
   // In a browser environment, we can't reliably get the real IP.
   // This is a placeholder; consider using a service like ipify if needed.
-  return null; // In a browser environment, we can't reliably get the real IP. Sending null for inet type.
+  return null; // Sending null for inet type.
 }
- 
+
 /* ---------------------------- login flow with logging ---------------------------- */
- 
+
 let attempts = 0;
- 
+
 function logLine(container, text, cls = "") {
   const line = document.createElement("div");
   if (cls) line.className = cls;
@@ -129,13 +37,11 @@ function logLine(container, text, cls = "") {
   container.appendChild(line);
   container.scrollTop = container.scrollHeight;
 }
- 
-function wait(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
 async function logLoginAttempt(username, status) {
   const sb = getSupabase();
   if (!sb) return;
-  
+
   try {
     await sb.from(LOGIN_LOG_TABLE).insert({
       username,
@@ -147,25 +53,25 @@ async function logLoginAttempt(username, status) {
     console.error("Failed to log login attempt:", err);
   }
 }
- 
+
 async function handleLogin(e) {
   e.preventDefault();
- 
+
   const submitBtn = document.getElementById("submitBtn");
   const feedback = document.getElementById("feedback");
   const log = document.getElementById("terminalLog");
   const userInput = document.getElementById("username").value.trim();
   const passInput = document.getElementById("password").value;
- 
+
   attempts += 1;
   document.getElementById("attemptCounter").textContent = `ATTEMPTS: ${attempts}`;
- 
+
   submitBtn.disabled = true;
   feedback.textContent = "";
   feedback.className = "feedback";
   log.classList.add("open");
   log.innerHTML = "";
- 
+
   logLine(log, "> initiating handshake…", "accent");
   await wait(220);
   logLine(log, "> hashing operator id (SHA-256)…");
@@ -176,15 +82,15 @@ async function handleLogin(e) {
   await wait(220);
   logLine(log, "> comparing digests against clearance ledger…");
   await wait(280);
- 
+
   if (userHash === EXPECTED_USER_HASH && passHash === EXPECTED_PASS_HASH) {
     await logLoginAttempt(userInput, "success");
     return grantAccess(log, feedback, "ADMIN", { username: userInput });
   }
- 
+
   logLine(log, "> no local match — checking guest ledger…");
   const guest = await checkGuestCredential(userInput, passHash);
- 
+
   if (guest) {
     await logLoginAttempt(userInput, "success");
     return grantAccess(log, feedback, "GUEST", {
@@ -195,7 +101,7 @@ async function handleLogin(e) {
 
   logLine(log, "> no guest match — checking dev profiles…");
   const devProfile = await checkDevProfile(userInput, passHash);
-  
+
   if (devProfile) {
     await logLoginAttempt(userInput, "success");
     return grantAccess(log, feedback, "DEV", {
@@ -203,21 +109,21 @@ async function handleLogin(e) {
       role: devProfile.role,
     });
   }
- 
+
   logLine(log, "> digest mismatch — credentials rejected.", "bad");
   logLine(log, `> incident logged: attempt #${attempts} from this terminal.`, "bad");
   feedback.textContent = "ACCESS DENIED — CREDENTIALS INVALID";
   submitBtn.disabled = false;
   document.getElementById("password").value = "";
   document.getElementById("password").focus();
-  
+
   await logLoginAttempt(userInput, "failure");
 }
- 
+
 async function checkGuestCredential(username, passHash) {
   const sb = getSupabase();
   if (!sb || !username) return null;
- 
+
   const nowIso = new Date().toISOString();
   const { data, error } = await sb
     .from(GUEST_TABLE)
@@ -226,7 +132,7 @@ async function checkGuestCredential(username, passHash) {
     .gt("expires_at", nowIso)
     .limit(1)
     .maybeSingle();
- 
+
   if (error || !data) return null;
   if (data.password_hash !== passHash) return null;
   return data;
@@ -235,26 +141,26 @@ async function checkGuestCredential(username, passHash) {
 async function checkDevProfile(username, passHash) {
   const sb = getSupabase();
   if (!sb || !username) return null;
-  
+
   const { data, error } = await sb
     .from(DEV_PROFILES_TABLE)
     .select("username, password_hash, role")
     .eq("username", username)
     .limit(1)
     .maybeSingle();
-  
+
   if (error || !data) return null;
   if (data.password_hash !== passHash) return null;
   return data;
 }
- 
+
 async function grantAccess(log, feedback, role, info) {
   logLine(log, "> digest match — identity confirmed.", "good");
   logLine(log, `> access granted [${role}]. loading dev panel…`, "good");
   feedback.textContent = "ACCESS GRANTED";
   feedback.classList.add("ok");
   setLink("live");
- 
+
   const session = {
     sid: randomSessionId(),
     role,
@@ -262,79 +168,70 @@ async function grantAccess(log, feedback, role, info) {
     expiresAt: info.expiresAt || null,
     devRole: info.role || null,
   };
-  sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
- 
+  setSession(session);
+
   await wait(450);
   enterDashboard();
 }
- 
-function getSession() {
-  try {
-    return JSON.parse(sessionStorage.getItem(SESSION_KEY) || "null");
-  } catch {
-    return null;
-  }
-}
- 
+
 /* ---------------------------- dashboard ---------------------------- */
- 
+
 function enterDashboard() {
-  const session = getSession();
+  const session = getValidSession();
   if (!session) return;
- 
+
   document.getElementById("loginScreen").classList.add("hidden");
   const dash = document.getElementById("dashboard");
   dash.classList.remove("hidden");
   document.getElementById("sessionId").textContent = `SESSION ${session.sid}`;
- 
+
   applyClearance(session);
   loadBannerMessages(session);
   initDashboard();
-  initForum(session);
 }
 
 async function loadBannerMessages(session) {
   const sb = getSupabase();
   if (!sb) return;
-  
+
   const bannerContainer = document.getElementById("bannerContainer");
   if (!bannerContainer) return;
-  
+
   const nowIso = new Date().toISOString();
   const { data, error } = await sb
     .from(BANNER_MESSAGES_TABLE)
     .select("id, message_text, target_role")
     .eq("is_active", true)
     .or(`expires_at.is.null,expires_at.gt.${nowIso}`);
-  
+
   if (error || !data || data.length === 0) {
     bannerContainer.innerHTML = "";
     return;
   }
-  
-  const relevantMessages = data.filter(msg => 
-    msg.target_role === "all" || msg.target_role === session.role || 
+
+  const relevantMessages = data.filter(msg =>
+    msg.target_role === "all" || msg.target_role === session.role ||
     (session.role === "DEV" && msg.target_role === "admin")
   );
-  
+
   if (relevantMessages.length === 0) {
     bannerContainer.innerHTML = "";
     return;
   }
-  
+
   bannerContainer.innerHTML = relevantMessages
     .map(msg => `<div class="banner-message">${escapeHtml(msg.message_text)}</div>`)
     .join("");
   bannerContainer.classList.remove("hidden");
 }
- 
+
 function applyClearance(session) {
   const clearanceLine = document.getElementById("clearanceLine");
   const guestBanner = document.getElementById("guestBanner");
   const guestCard = document.getElementById("guestCard");
   const queryCard = document.getElementById("queryCard");
   const devProfileCard = document.getElementById("devProfileCard");
- 
+
   if (session.role === "ADMIN") {
     clearanceLine.textContent = `CLEARANCE GRANTED · LEVEL 5 · OPERATOR ${session.username}`;
     guestBanner.classList.add("hidden");
@@ -356,14 +253,14 @@ function applyClearance(session) {
     startGuestCountdown(session.expiresAt);
   }
 }
- 
+
 let countdownInterval = null;
- 
+
 function startGuestCountdown(expiresAtIso) {
   if (countdownInterval) clearInterval(countdownInterval);
   const el = document.getElementById("guestCountdown");
   const expiresAt = new Date(expiresAtIso).getTime();
- 
+
   function tick() {
     const remainingMs = expiresAt - Date.now();
     if (remainingMs <= 0) {
@@ -377,16 +274,14 @@ function startGuestCountdown(expiresAtIso) {
     const s = Math.floor((remainingMs % 60000) / 1000);
     el.textContent = `${pad(h)}H ${pad(m)}M ${pad(s)}S`;
   }
- 
+
   tick();
   countdownInterval = setInterval(tick, 1000);
 }
- 
+
 function logout() {
-  sessionStorage.removeItem(SESSION_KEY);
+  clearSession();
   if (countdownInterval) clearInterval(countdownInterval);
-  forumState.activeChannelId = null;
-  forumState.session = null;
   setLink("standby");
   document.getElementById("dashboard").classList.add("hidden");
   document.getElementById("loginScreen").classList.remove("hidden");
@@ -398,9 +293,9 @@ function logout() {
   document.getElementById("attemptCounter").textContent = "ATTEMPTS: 0";
   document.getElementById("submitBtn").disabled = false;
 }
- 
+
 let dashboardInitialized = false;
- 
+
 function sysLog(text, cls) {
   const box = document.getElementById("sysLog");
   if (!box) return;
@@ -410,16 +305,16 @@ function sysLog(text, cls) {
   box.appendChild(line);
   box.scrollTop = box.scrollHeight;
 }
- 
+
 async function initDashboard() {
   document.getElementById("projUrl").textContent = SUPABASE_URL;
   document.getElementById("projKey").textContent = SUPABASE_PUBLISHABLE_KEY;
- 
+
   if (dashboardInitialized) return;
   dashboardInitialized = true;
- 
+
   sysLog("dev access panel initialized.");
- 
+
   const sb = getSupabase();
   if (!sb) {
     sysLog("supabase-js failed to load from CDN.", "bad");
@@ -427,7 +322,7 @@ async function initDashboard() {
     return;
   }
   sysLog("supabase client created with publishable key.");
- 
+
   try {
     const { error } = await sb.from("__ping__").select("*").limit(1);
     if (error && !/relation .* does not exist/i.test(error.message || "")) {
@@ -439,11 +334,11 @@ async function initDashboard() {
     setDbStatus(false, "UNREACHABLE");
     sysLog(`handshake failed: ${err.message || err}`, "bad");
   }
- 
+
   const session = getSession();
- 
+
   document.getElementById("runQuery").addEventListener("click", runQuery);
- 
+
   if (session && session.role === "ADMIN") {
     document.getElementById("createGuestBtn").addEventListener("click", createGuestCredential);
     document.getElementById("createDevBtn").addEventListener("click", createDevProfile);
@@ -453,21 +348,21 @@ async function initDashboard() {
     refreshBannerList();
   }
 }
- 
+
 function setDbStatus(ok, label) {
   const pill = document.getElementById("dbStatus");
   pill.textContent = label;
   pill.className = "pill " + (ok ? "ok" : "bad");
 }
- 
+
 /* ---------------------------- query console (admin) ---------------------------- */
- 
+
 async function runQuery() {
   const sb = getSupabase();
   const table = document.getElementById("tableName").value.trim();
   const limit = Math.min(Math.max(parseInt(document.getElementById("rowLimit").value, 10) || 25, 1), 500);
   const output = document.getElementById("queryOutput");
- 
+
   if (!table) {
     output.innerHTML = '<p class="muted" style="color:var(--alert)">// enter a table name first.</p>';
     return;
@@ -476,71 +371,71 @@ async function runQuery() {
     output.innerHTML = '<p class="muted" style="color:var(--alert)">// database client not initialized.</p>';
     return;
   }
- 
+
   output.innerHTML = '<p class="muted">// querying…</p>';
   sysLog(`SELECT * FROM ${table} LIMIT ${limit};`);
- 
+
   const { data, error } = await sb.from(table).select("*").limit(limit);
- 
+
   if (error) {
     output.innerHTML = `<p class="muted" style="color:var(--alert)">// ${escapeHtml(error.message)}</p>`;
     sysLog(`query error: ${error.message}`, "bad");
     return;
   }
- 
+
   if (!data || data.length === 0) {
     output.innerHTML = '<p class="muted">// query succeeded — 0 rows returned.</p>';
     sysLog(`query ok — 0 rows.`, "good");
     return;
   }
- 
+
   sysLog(`query ok — ${data.length} row(s).`, "good");
   output.innerHTML = renderTable(data);
 }
- 
+
 /* ---------------------------- guest credentials (admin) ---------------------------- */
- 
+
 function generateGuestUsername() {
   return `GUEST-${randomHex(2).toUpperCase()}`;
 }
- 
+
 function generateGuestPassword() {
   return randomHex(8);
 }
- 
+
 async function createGuestCredential() {
   const sb = getSupabase();
   const output = document.getElementById("guestOutput");
   const label = document.getElementById("guestLabel").value.trim();
- 
+
   if (!sb) {
     output.innerHTML = '<p class="muted" style="color:var(--alert)">// database client not initialized.</p>';
     return;
   }
- 
+
   const username = generateGuestUsername();
   const password = generateGuestPassword();
   const passwordHash = await sha256(password);
   const expiresAt = new Date(Date.now() + GUEST_TTL_HOURS * 3600 * 1000).toISOString();
- 
+
   output.innerHTML = '<p class="muted">// issuing credentials…</p>';
- 
+
   const { error } = await sb.from(GUEST_TABLE).insert({
     username,
     password_hash: passwordHash,
     label: label || null,
     expires_at: expiresAt,
   });
- 
+
   if (error) {
     output.innerHTML = `<p class="muted" style="color:var(--alert)">// ${escapeHtml(error.message)} — has guest_access.sql been run in Supabase yet?</p>`;
     sysLog(`guest issue failed: ${error.message}`, "bad");
     return;
   }
- 
+
   sysLog(`guest credential issued: ${username} (expires ${expiresAt}).`, "good");
   document.getElementById("guestLabel").value = "";
- 
+
   output.innerHTML = `
     <p style="color:var(--good); margin:0 0 8px">// credentials generated — shown once, copy them now:</p>
     <div class="kv" style="grid-template-columns:110px 1fr">
@@ -549,32 +444,32 @@ async function createGuestCredential() {
       <dt>EXPIRES</dt><dd>${escapeHtml(new Date(expiresAt).toUTCString())}</dd>
     </div>
   `;
- 
+
   refreshGuestList();
 }
- 
+
 async function refreshGuestList() {
   const sb = getSupabase();
   const box = document.getElementById("guestList");
   if (!sb || !box) return;
- 
+
   const nowIso = new Date().toISOString();
   const { data, error } = await sb
     .from(GUEST_TABLE)
     .select("id, username, label, created_at, expires_at")
     .gt("expires_at", nowIso)
     .order("created_at", { ascending: false });
- 
+
   if (error) {
     box.innerHTML = `<p class="muted" style="color:var(--alert)">// ${escapeHtml(error.message)}</p>`;
     return;
   }
- 
+
   if (!data || data.length === 0) {
     box.innerHTML = '<p class="muted">// no active guest credentials.</p>';
     return;
   }
- 
+
   const rows = data
     .map(
       (g) => `<tr>
@@ -585,19 +480,19 @@ async function refreshGuestList() {
       </tr>`
     )
     .join("");
- 
+
   box.innerHTML = `
     <table class="result">
       <thead><tr><th>USERNAME</th><th>LABEL</th><th>EXPIRES</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
   `;
- 
+
   box.querySelectorAll("[data-revoke]").forEach((btn) => {
     btn.addEventListener("click", () => revokeGuest(btn.getAttribute("data-revoke")));
   });
 }
- 
+
 async function revokeGuest(id) {
   const sb = getSupabase();
   if (!sb) return;
@@ -618,37 +513,37 @@ async function createDevProfile() {
   const username = document.getElementById("devUsername").value.trim();
   const password = document.getElementById("devPassword").value;
   const role = document.getElementById("devRole").value || "editor";
-  
+
   if (!sb) {
     output.innerHTML = '<p class="muted" style="color:var(--alert)">// database client not initialized.</p>';
     return;
   }
-  
+
   if (!username || !password) {
     output.innerHTML = '<p class="muted" style="color:var(--alert)">// username and password are required.</p>';
     return;
   }
-  
+
   const passwordHash = await sha256(password);
-  
+
   output.innerHTML = '<p class="muted">// creating dev profile…</p>';
-  
+
   const { error } = await sb.from(DEV_PROFILES_TABLE).insert({
     username,
     password_hash: passwordHash,
     role,
   });
-  
+
   if (error) {
     output.innerHTML = `<p class="muted" style="color:var(--alert)">// ${escapeHtml(error.message)}</p>`;
     sysLog(`dev profile creation failed: ${error.message}`, "bad");
     return;
   }
-  
+
   sysLog(`dev profile created: ${username} with role ${role}.`, "good");
   document.getElementById("devUsername").value = "";
   document.getElementById("devPassword").value = "";
-  
+
   output.innerHTML = `
     <p style="color:var(--good); margin:0 0 8px">// dev profile created successfully:</p>
     <div class="kv" style="grid-template-columns:110px 1fr">
@@ -656,7 +551,7 @@ async function createDevProfile() {
       <dt>ROLE</dt><dd>${escapeHtml(role)}</dd>
     </div>
   `;
-  
+
   refreshDevProfileList();
 }
 
@@ -664,22 +559,22 @@ async function refreshDevProfileList() {
   const sb = getSupabase();
   const box = document.getElementById("devList");
   if (!sb || !box) return;
-  
+
   const { data, error } = await sb
     .from(DEV_PROFILES_TABLE)
     .select("id, username, role, created_at")
     .order("created_at", { ascending: false });
-  
+
   if (error) {
     box.innerHTML = `<p class="muted" style="color:var(--alert)">// ${escapeHtml(error.message)}</p>`;
     return;
   }
-  
+
   if (!data || data.length === 0) {
     box.innerHTML = '<p class="muted">// no dev profiles created yet.</p>';
     return;
   }
-  
+
   const rows = data
     .map(
       (d) => `<tr>
@@ -690,14 +585,14 @@ async function refreshDevProfileList() {
       </tr>`
     )
     .join("");
-  
+
   box.innerHTML = `
     <table class="result">
       <thead><tr><th>USERNAME</th><th>ROLE</th><th>CREATED</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
   `;
-  
+
   box.querySelectorAll("[data-delete]").forEach((btn) => {
     btn.addEventListener("click", () => deleteDevProfile(btn.getAttribute("data-delete")));
   });
@@ -723,37 +618,37 @@ async function sendBannerMessage() {
   const messageText = document.getElementById("bannerText").value.trim();
   const targetRole = document.getElementById("bannerTargetRole").value || "all";
   const expiresIn = parseInt(document.getElementById("bannerExpiresIn").value, 10) || 0;
-  
+
   if (!sb) {
     output.innerHTML = '<p class="muted" style="color:var(--alert)">// database client not initialized.</p>';
     return;
   }
-  
+
   if (!messageText) {
     output.innerHTML = '<p class="muted" style="color:var(--alert)">// message text is required.</p>';
     return;
   }
-  
+
   output.innerHTML = '<p class="muted">// sending banner message…</p>';
-  
+
   const expiresAt = expiresIn > 0 ? new Date(Date.now() + expiresIn * 60 * 1000).toISOString() : null;
-  
+
   const { error } = await sb.from(BANNER_MESSAGES_TABLE).insert({
     message_text: messageText,
     is_active: true,
     target_role: targetRole,
     expires_at: expiresAt,
   });
-  
+
   if (error) {
     output.innerHTML = `<p class="muted" style="color:var(--alert)">// ${escapeHtml(error.message)}</p>`;
     sysLog(`banner message send failed: ${error.message}`, "bad");
     return;
   }
-  
+
   sysLog(`banner message sent to ${targetRole} (expires: ${expiresAt || "never"}).`, "good");
   document.getElementById("bannerText").value = "";
-  
+
   output.innerHTML = `
     <p style="color:var(--good); margin:0 0 8px">// banner message sent successfully:</p>
     <div class="kv" style="grid-template-columns:110px 1fr">
@@ -761,7 +656,7 @@ async function sendBannerMessage() {
       <dt>EXPIRES</dt><dd>${escapeHtml(expiresAt || "never")}</dd>
     </div>
   `;
-  
+
   refreshBannerList();
 }
 
@@ -769,23 +664,23 @@ async function refreshBannerList() {
   const sb = getSupabase();
   const box = document.getElementById("bannerList");
   if (!sb || !box) return;
-  
+
   const { data, error } = await sb
     .from(BANNER_MESSAGES_TABLE)
     .select("id, message_text, target_role, is_active, expires_at")
     .eq("is_active", true)
     .order("created_at", { ascending: false });
-  
+
   if (error) {
     box.innerHTML = `<p class="muted" style="color:var(--alert)">// ${escapeHtml(error.message)}</p>`;
     return;
   }
-  
+
   if (!data || data.length === 0) {
     box.innerHTML = '<p class="muted">// no active banner messages.</p>';
     return;
   }
-  
+
   const rows = data
     .map(
       (b) => `<tr>
@@ -796,14 +691,14 @@ async function refreshBannerList() {
       </tr>`
     )
     .join("");
-  
+
   box.innerHTML = `
     <table class="result">
       <thead><tr><th>MESSAGE</th><th>TARGET</th><th>EXPIRES</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
   `;
-  
+
   box.querySelectorAll("[data-deactivate]").forEach((btn) => {
     btn.addEventListener("click", () => deactivateBanner(btn.getAttribute("data-deactivate")));
   });
@@ -820,181 +715,9 @@ async function deactivateBanner(id) {
   sysLog(`banner message ${id} deactivated.`, "good");
   refreshBannerList();
 }
- 
-/* ---------------------------- forum ---------------------------- */
-
-const forumState = {
-  channels: [],
-  activeChannelId: null,
-  initialized: false,
-  session: null,
-};
-
-function initForum(session) {
-  forumState.session = session;
-
-  const userPill = document.getElementById("forumUserPill");
-  if (userPill) userPill.textContent = `POSTING AS ${session.username}`;
-
-  const addRow = document.getElementById("forumAddChannelRow");
-  if (addRow) addRow.style.display = isForumAdmin(session) ? "flex" : "none";
-
-  if (!forumState.initialized) {
-    forumState.initialized = true;
-    document.getElementById("forumCreateChannelBtn")?.addEventListener("click", () => createForumChannel(forumState.session));
-    document.getElementById("forumPostBtn")?.addEventListener("click", () => submitForumPost(forumState.session));
-  }
-
-  loadForumChannels(session);
-}
-
-async function loadForumChannels(session) {
-  const sb = getForumSupabase();
-  const list = document.getElementById("forumChannelList");
-  if (!list) return;
-
-  if (!sb) {
-    list.innerHTML = '<p class="muted" style="color:var(--alert)">// forum database client not initialized.</p>';
-    return;
-  }
-
-  const { data, error } = await sb
-    .from(FORUM_CHANNELS_TABLE)
-    .select("id, name, description")
-    .order("name", { ascending: true });
-
-  if (error) {
-    list.innerHTML = `<p class="muted" style="color:var(--alert)">// ${escapeHtml(error.message)}</p>`;
-    return;
-  }
-
-  forumState.channels = data || [];
-
-  if (forumState.channels.length === 0) {
-    list.innerHTML = '<p class="muted">// no channels yet.</p>';
-    document.getElementById("forumPosts").innerHTML = '<p class="muted">// no channel selected.</p>';
-    return;
-  }
-
-  if (!forumState.activeChannelId || !forumState.channels.some((c) => c.id === forumState.activeChannelId)) {
-    forumState.activeChannelId = forumState.channels[0].id;
-  }
-
-  list.innerHTML = forumState.channels
-    .map(
-      (c) => `<button type="button" class="forum-channel-btn${c.id === forumState.activeChannelId ? " active" : ""}" data-channel="${c.id}">
-        #${escapeHtml(c.name)}
-      </button>`
-    )
-    .join("");
-
-  list.querySelectorAll("[data-channel]").forEach((btn) => {
-    btn.addEventListener("click", () => selectForumChannel(session, Number(btn.getAttribute("data-channel"))));
-  });
-
-  loadForumPosts(forumState.activeChannelId);
-}
-
-function selectForumChannel(session, channelId) {
-  forumState.activeChannelId = channelId;
-  document.querySelectorAll(".forum-channel-btn").forEach((btn) => {
-    btn.classList.toggle("active", Number(btn.getAttribute("data-channel")) === channelId);
-  });
-  loadForumPosts(channelId);
-}
-
-async function loadForumPosts(channelId) {
-  const sb = getForumSupabase();
-  const box = document.getElementById("forumPosts");
-  if (!sb || !box || !channelId) return;
-
-  box.innerHTML = '<p class="muted">// loading posts…</p>';
-
-  const { data, error } = await sb
-    .from(FORUM_POSTS_TABLE)
-    .select("id, username, content, created_at")
-    .eq("channel_id", channelId)
-    .order("created_at", { ascending: true });
-
-  if (error) {
-    box.innerHTML = `<p class="muted" style="color:var(--alert)">// ${escapeHtml(error.message)}</p>`;
-    return;
-  }
-
-  if (!data || data.length === 0) {
-    box.innerHTML = '<p class="muted">// no posts in this channel yet — be the first.</p>';
-    return;
-  }
-
-  box.innerHTML = data
-    .map(
-      (p) => `<div class="forum-post">
-        <div class="forum-post__meta"><span class="forum-post__user">${escapeHtml(p.username)}</span><span class="forum-post__time">${escapeHtml(new Date(p.created_at).toUTCString())}</span></div>
-        <div class="forum-post__body">${escapeHtml(p.content)}</div>
-      </div>`
-    )
-    .join("");
-
-  box.scrollTop = box.scrollHeight;
-}
-
-async function submitForumPost(session) {
-  const sb = getForumSupabase();
-  const textarea = document.getElementById("forumPostText");
-  const content = textarea?.value.trim();
-
-  if (!sb) return;
-  if (!forumState.activeChannelId) {
-    sysLog("forum post failed: no channel selected.", "bad");
-    return;
-  }
-  if (!content) return;
-
-  const { error } = await sb.from(FORUM_POSTS_TABLE).insert({
-    channel_id: forumState.activeChannelId,
-    username: session.username,
-    content,
-  });
-
-  if (error) {
-    sysLog(`forum post failed: ${error.message}`, "bad");
-    return;
-  }
-
-  textarea.value = "";
-  loadForumPosts(forumState.activeChannelId);
-}
-
-async function createForumChannel(session) {
-  if (!isForumAdmin(session)) return;
-
-  const sb = getForumSupabase();
-  const nameInput = document.getElementById("forumChannelName");
-  const descInput = document.getElementById("forumChannelDesc");
-  const name = nameInput?.value.trim().toLowerCase().replace(/\s+/g, "-");
-  const description = descInput?.value.trim() || null;
-
-  if (!sb || !name) return;
-
-  const { error } = await sb.from(FORUM_CHANNELS_TABLE).insert({
-    name,
-    description,
-    created_by: session.username,
-  });
-
-  if (error) {
-    sysLog(`channel creation failed: ${error.message}`, "bad");
-    return;
-  }
-
-  sysLog(`forum channel #${name} created.`, "good");
-  nameInput.value = "";
-  descInput.value = "";
-  loadForumChannels(session);
-}
 
 /* ---------------------------- shared table renderer ---------------------------- */
- 
+
 function renderTable(rows) {
   const cols = Object.keys(rows[0]);
   const thead = `<tr>${cols.map((c) => `<th>${escapeHtml(c)}</th>`).join("")}</tr>`;
@@ -1006,29 +729,24 @@ function renderTable(rows) {
     .join("");
   return `<table class="result"><thead>${thead}</thead><tbody>${tbody}</tbody></table>`;
 }
- 
+
 function formatCell(v) {
   if (v === null || v === undefined) return "—";
   if (typeof v === "object") return JSON.stringify(v);
   return String(v);
 }
- 
+
 /* ---------------------------- boot ---------------------------- */
- 
+
 document.addEventListener("DOMContentLoaded", () => {
-  tickClock();
-  setInterval(tickClock, 1000);
- 
+  bootClock();
+
   document.getElementById("loginForm").addEventListener("submit", handleLogin);
   document.getElementById("logoutBtn").addEventListener("click", logout);
- 
-  const session = getSession();
+
+  const session = getValidSession();
   if (session) {
-    if (session.role === "GUEST" && session.expiresAt && new Date(session.expiresAt).getTime() <= Date.now()) {
-      sessionStorage.removeItem(SESSION_KEY);
-    } else {
-      setLink("live");
-      enterDashboard();
-    }
+    setLink("live");
+    enterDashboard();
   }
 });
